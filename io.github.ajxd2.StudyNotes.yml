@@ -1,0 +1,131 @@
+# Flatpak manifest. Build and install locally with:
+#   flatpak-builder --user --install --force-clean build-dir io.github.ajxd2.StudyNotes.yml
+# The pip and model steps use the network at build time, so this is a local/self-hosted build,
+# not a Flathub-ready one (Flathub needs offline sources).
+app-id: io.github.ajxd2.StudyNotes
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: study-notes
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=network                 # Claude (Agent SDK) and first-use model downloads
+  - --socket=pulseaudio             # microphone (PipeWire serves this socket too)
+  - --device=all                    # /dev/accel/accel0 (Intel NPU) and /dev/dri (GPU fallback)
+  - --filesystem=home               # your Obsidian vaults, recordings, and ~/.claude (Claude Code login)
+
+build-options:
+  # The Claude CLI bundled in the Agent SDK is a self-contained executable whose payload sits at the end
+  # of the file; stripping or adding a debug-info link corrupts it (it then behaves as plain Bun).
+  strip: false
+  no-debuginfo: true
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/man
+  - /share/doc
+
+modules:
+  # Level Zero loader: how OpenVINO's NPU plugin talks to the NPU driver.
+  - name: level-zero
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    build-options:
+      build-args:
+        - --share=network           # the loader fetches a vendored logging library while configuring
+    sources:
+      - type: archive
+        url: https://github.com/oneapi-src/level-zero/archive/refs/tags/v1.34.0.tar.gz
+        sha256: 5856f6ff3ad465f8ea5dc7b7dc4f8b3d436d826f2751f91896d204b638fdc0d9
+
+  # Intel's official NPU user-mode driver and compiler (same release as the kernel-side firmware).
+  - name: intel-npu-driver
+    buildsystem: simple
+    sources:
+      - type: archive
+        url: https://github.com/intel/linux-npu-driver/releases/download/v1.38.0/linux-npu-driver-v1.38.0.20260910-34487311128-ubuntu2604.tar.gz
+        sha256: 83685e6d92f4db1ca65e442846d487c7feb1335634b33994292ceb38f933bcc7
+        strip-components: 0
+    build-commands:
+      - |
+        set -e
+        for pkg in intel-driver-compiler-npu intel-level-zero-npu; do
+          mkdir "x-$pkg"
+          (cd "x-$pkg" && ar x ../${pkg}_*.deb && tar xf data.tar.*)
+          install -d /app/lib
+          cp -a "x-$pkg"/usr/lib/x86_64-linux-gnu/. /app/lib/
+        done
+
+  # ffmpeg/ffprobe: decode any audio/video the user imports.
+  - name: ffmpeg
+    buildsystem: simple
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-7.1.2.tar.xz
+        sha256: 089bc60fb59d6aecc5d994ff530fd0dcb3ee39aa55867849a2bbc4e555f9c304
+    build-commands:
+      - ./configure --prefix=/app --enable-shared --disable-static --enable-pic --disable-debug --disable-doc --disable-ffplay --disable-x86asm
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+    cleanup:
+      - /share/ffmpeg
+
+  # Worker dependencies (OpenVINO GenAI, sherpa-onnx, Claude Agent SDK with its bundled CLI).
+  - name: python-deps
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - pip3 install --prefix=/app --no-cache-dir --ignore-installed openvino-genai sherpa-onnx claude-agent-sdk numpy huggingface_hub
+
+  # Models shipped in the app so it works offline on first launch.
+  - name: models
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    sources:
+      - type: file
+        url: https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
+        sha256: 24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488
+      - type: file
+        url: https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx
+        sha256: 5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94
+      - type: file
+        url: https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+        sha256: 9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
+    build-commands:
+      - install -d /app/share/study-notes/models
+      - tar xjf sherpa-onnx-pyannote-segmentation-3-0.tar.bz2 -C /app/share/study-notes/models --wildcards '*/model.int8.onnx'
+      - install -m644 wespeaker_en_voxceleb_resnet34.onnx silero_vad.onnx /app/share/study-notes/models/
+      - python3 -c "from huggingface_hub import snapshot_download as s; s('OpenVINO/whisper-base.en-fp16-ov', local_dir='/app/share/study-notes/models/whisper-base.en-fp16-ov')"
+      - rm -rf /app/share/study-notes/models/*/.cache
+
+  - name: study-notes
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: .
+        skip: [.venv, .git, .flatpak-builder, build-dir, docs, __pycache__]
+      - type: script
+        dest-filename: study-notes
+        commands:
+          - exec python3 /app/share/study-notes/studynotes/main.py "$@"
+    build-commands:
+      - install -d /app/share/study-notes
+      - cp -r studynotes /app/share/study-notes/
+      - find /app/share/study-notes -name __pycache__ -prune -exec rm -rf {} +
+      - install -Dm755 study-notes /app/bin/study-notes
+      - sed 's#@BIN@#study-notes#g' data/io.github.ajxd2.StudyNotes.desktop > app.desktop
+      - install -Dm644 app.desktop /app/share/applications/io.github.ajxd2.StudyNotes.desktop
+      - sed 's#@BIN@#/app/bin/study-notes#g' data/io.github.ajxd2.StudyNotes.service > app.service
+      - install -Dm644 app.service /app/share/dbus-1/services/io.github.ajxd2.StudyNotes.service
+      - install -Dm644 data/io.github.ajxd2.StudyNotes.svg /app/share/icons/hicolor/scalable/apps/io.github.ajxd2.StudyNotes.svg
+      - install -Dm644 data/io.github.ajxd2.StudyNotes.metainfo.xml /app/share/metainfo/io.github.ajxd2.StudyNotes.metainfo.xml

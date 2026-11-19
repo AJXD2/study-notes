@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ajxd2.StudyNotes</id>
+  <name>Study Notes</name>
+  <summary>Record classes and get Obsidian notes written in your own style</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.ajxd2"><name>Anthony Kovach</name></developer>
+  <description>
+    <p>Study Notes records or imports your classes, transcribes them locally on your Intel NPU, detects who is speaking, and has Claude write notes from your own Obsidian vault, in your template and your style.</p>
+    <ul>
+      <li>Record with a live waveform, or import whole folders of old recordings</li>
+      <li>Fast local transcription with OpenVINO Whisper (NPU, GPU or CPU)</li>
+      <li>Speaker detection, or a much faster mode without it</li>
+      <li>Notes saved as plain Markdown in your vault, following your layout and lecture template</li>
+      <li>Uses your Claude Code login, so no API key is needed</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.ajxd2.StudyNotes.desktop</launchable>
+  <url type="homepage">https://github.com/AJXD2/study-notes</url>
+  <url type="bugtracker">https://github.com/AJXD2/study-notes/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/AJXD2/study-notes/main/docs/screenshots/app-dark.png</image>
+      <caption>A generated lecture note</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/AJXD2/study-notes/main/docs/screenshots/recording.png</image>
+      <caption>Recording with a live waveform</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/AJXD2/study-notes/main/docs/screenshots/import.png</image>
+      <caption>Importing a folder of recordings</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <categories><category>Education</category><category>Office</category></categories>
+  <requires><display_length compare="ge">360</display_length></requires>
+  <supports><control>keyboard</control><control>pointing</control><control>touch</control></supports>
+  <releases>
+    <release version="1.0" date="2026-11-18"/>
+  </releases>
+</component>

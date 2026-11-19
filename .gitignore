@@ -9,3 +9,6 @@ __pycache__/
 *.onnx
 .cache/
 models/
+.flatpak-builder/
+build-dir/
+.flatpak-repo/
