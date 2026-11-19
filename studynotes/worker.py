@@ -25,10 +25,21 @@ import wave
 from pathlib import Path
 
 MODELS = Path(os.environ.get("STUDYNOTES_MODELS", "~/.local/share/study-notes/models")).expanduser()
-CACHE = Path("~/.cache/study-notes/ov").expanduser()
-SEG_MODEL = MODELS / "sherpa-onnx-pyannote-segmentation-3-0" / "model.int8.onnx"
-EMB_MODEL = MODELS / "wespeaker_en_voxceleb_resnet34.onnx"
-VAD_MODEL = MODELS / "silero_vad.onnx"
+BUNDLED = Path(os.environ.get("STUDYNOTES_BUNDLED_MODELS", "/app/share/study-notes/models"))  # Flatpak
+CACHE = Path(os.environ.get("STUDYNOTES_CACHE", "~/.cache/study-notes")).expanduser() / "ov"
+
+
+def find_model(rel: str) -> Path:
+    """First existing copy of a model: the user's models dir, then the one shipped inside the Flatpak."""
+    for root in (MODELS, BUNDLED):
+        if (root / rel).exists():
+            return root / rel
+    return MODELS / rel
+
+
+SEG_MODEL = find_model("sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx")
+EMB_MODEL = find_model("wespeaker_en_voxceleb_resnet34.onnx")
+VAD_MODEL = find_model("silero_vad.onnx")
 
 
 def emit(**kw) -> None:
@@ -133,9 +144,18 @@ def transcribe_audio(audio, asr: str, device: str, turns=None):
 
     dur = len(audio) / 16000
 
-    model_dir = MODELS / asr
+    model_dir = find_model(asr)
     if not model_dir.is_dir():
-        raise RuntimeError(f"Whisper model not found: {model_dir}")
+        # not bundled and not downloaded yet: fetch the OpenVINO IR from Hugging Face once
+        try:
+            from huggingface_hub import snapshot_download
+
+            emit(event="progress", stage="loading", detail="Downloading the speech model (one time)…")
+            MODELS.mkdir(parents=True, exist_ok=True)
+            snapshot_download(f"OpenVINO/{asr}", local_dir=MODELS / asr)
+            model_dir = MODELS / asr
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"Speech model '{asr}' is missing and could not be downloaded: {e}")
     CACHE.mkdir(parents=True, exist_ok=True)
     def make(dev):
         return ov_genai.WhisperPipeline(str(model_dir), dev, CACHE_DIR=str(CACHE))

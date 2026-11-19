@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -13,11 +14,25 @@ from gi.repository import GLib
 
 APP_ID = "io.github.ajxd2.StudyNotes"
 ROOT = Path(__file__).resolve().parent.parent
+IN_FLATPAK = Path("/.flatpak-info").exists()
+# Inside Flatpak the app and the worker share the runtime's Python (deps live in /app); on a normal
+# install the worker runs in the project's virtualenv.
 VENV_PY = ROOT / ".venv" / "bin" / "python"
 WORKER = ROOT / "studynotes" / "worker.py"
-CONFIG = Path("~/.config/study-notes/config.json").expanduser()
-REC_DIR = Path("~/.local/share/study-notes/recordings").expanduser()
-TMP_DIR = Path("~/.cache/study-notes/tmp").expanduser()
+# XDG dirs (identical to ~/.config etc. on a normal install; ~/.var/app/<id>/... under Flatpak)
+CONFIG = Path(GLib.get_user_config_dir()) / "study-notes" / "config.json"
+DATA_DIR = Path(GLib.get_user_data_dir()) / "study-notes"
+CACHE_DIR = Path(GLib.get_user_cache_dir()) / "study-notes"
+REC_DIR = DATA_DIR / "recordings"
+TMP_DIR = CACHE_DIR / "tmp"
+MODELS_DIR = Path(os.environ.get("STUDYNOTES_MODELS") or DATA_DIR / "models")
+BUNDLED_MODELS = Path("/app/share/study-notes/models")  # shipped inside the Flatpak
+
+
+def worker_python() -> Path | None:
+    if VENV_PY.exists():
+        return VENV_PY
+    return Path(sys.executable) if IN_FLATPAK else None
 
 MODEL_CHOICES = [("claude-haiku-5-5", "Claude Haiku 5.5", "Fast, light on your usage"),
                  ("claude-sonnet-5-5", "Claude Sonnet 5.5", "Better notes, uses more of your plan")]
@@ -50,6 +65,13 @@ DEFAULTS = {
 # ---- config ---------------------------------------------------------------
 def load_config() -> dict:
     cfg = dict(DEFAULTS)
+    if IN_FLATPAK and not CONFIG.exists():  # first run in the sandbox: adopt the host app's settings
+        legacy = Path.home() / ".config" / "study-notes" / "config.json"
+        try:
+            CONFIG.parent.mkdir(parents=True, exist_ok=True)
+            CONFIG.write_text(legacy.read_text())
+        except OSError:
+            pass
     try:
         cfg.update(json.loads(CONFIG.read_text()))
     except (OSError, ValueError):
@@ -296,10 +318,16 @@ class Worker:
 
     def __init__(self, args: list[str], on_event, env_extra: dict | None = None):
         env = dict(os.environ)
+        env.setdefault("STUDYNOTES_MODELS", str(MODELS_DIR))
+        env.setdefault("STUDYNOTES_BUNDLED_MODELS", str(BUNDLED_MODELS))
+        env.setdefault("STUDYNOTES_CACHE", str(CACHE_DIR))
         for k, v in (env_extra or {}).items():
             env.pop(k, None) if v == "" else env.__setitem__(k, v)
+        py = worker_python()
+        if py is None:
+            raise RuntimeError("The AI environment is missing. Run scripts/install.sh")
         self.proc = subprocess.Popen(
-            [str(VENV_PY), str(WORKER), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            [str(py), str(WORKER), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, env=env, preexec_fn=lambda: os.nice(10))  # keep UI responsive, fans calm
         self.on_event = on_event
         self.cancelled = False

@@ -19,7 +19,7 @@ gi.require_version("Adw", "1")
 gi.require_version("Gst", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Gst, Gtk  # noqa: E402
 
-from common import APP_ID, VENV_PY, classes_root, load_config, safe_name, vault_dir  # noqa: E402
+from common import APP_ID, classes_root, worker_python, load_config, safe_name, vault_dir  # noqa: E402
 from importer import ImportDialog  # noqa: E402
 from prefs import Preferences  # noqa: E402
 from record import RecordDialog  # noqa: E402
@@ -78,7 +78,7 @@ class App(Adw.Application):
     # ---- actions -------------------------------------------------------
     def _guard(self) -> MainWindow | None:
         win = self._ensure_window()
-        if not VENV_PY.exists():
+        if worker_python() is None:
             win.toast("The AI environment is missing. See README.md to rebuild it.")
             return None
         vault_dir().mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from gi.repository import Adw, GLib, Gst, Gtk
 
-from common import (REC_DIR, Job, course_of, fmt_dur, load_config, safe_name, signed_in, vault_classes,
+from common import (IN_FLATPAK, REC_DIR, Job, course_of, fmt_dur, load_config, safe_name, signed_in, vault_classes,
                     vault_dir)
 
 
@@ -195,9 +195,11 @@ class RecordDialog(Adw.Dialog):
     def _start(self):
         REC_DIR.mkdir(parents=True, exist_ok=True)
         wav = REC_DIR / f"{dt.datetime.now():%Y%m%d-%H%M%S}.wav"
+        # PulseAudio's socket is the sandbox-friendly path to the mic (PipeWire serves it too)
+        src = "pulsesrc" if IN_FLATPAK and Gst.ElementFactory.find("pulsesrc") else "pipewiresrc"
         try:
             self.pipeline = Gst.parse_launch(
-                "pipewiresrc ! audioconvert ! level name=lvl interval=60000000 post-messages=true ! "
+                f"{src} ! audioconvert ! level name=lvl interval=60000000 post-messages=true ! "
                 "audioresample ! audio/x-raw,format=S16LE,rate=16000,channels=1 ! wavenc ! "
                 f'filesink location="{wav}"')
         except GLib.Error as e:
