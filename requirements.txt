@@ -1,0 +1,6 @@
+# Runs inside .venv and is used only by studynotes/worker.py (the UI uses system PyGObject).
+openvino-genai>=2026.4.1
+sherpa-onnx>=2.0.1
+claude-agent-sdk>=0.2.184
+numpy>=2.0
+huggingface_hub>=2.0
