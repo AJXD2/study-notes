@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Study Notes
+Comment=Record classes and turn them into notes with Claude
+Exec=@BIN@ %F
+Icon=io.github.ajxd2.StudyNotes
+Terminal=false
+DBusActivatable=true
+Categories=Education;
+StartupWMClass=io.github.ajxd2.StudyNotes
+Keywords=notes;obsidian;lecture;transcribe;
+MimeType=audio/x-wav;audio/wav;audio/mpeg;audio/mp4;audio/x-m4a;audio/aac;audio/ogg;audio/flac;audio/x-flac;audio/opus;video/mp4;video/webm;
+Actions=record;import;
+
+[Desktop Action record]
+Name=New Recording
+Exec=@BIN@
+
+[Desktop Action import]
+Name=Import Recordings…
+Exec=@BIN@
