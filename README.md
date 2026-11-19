@@ -121,7 +121,9 @@ flatpak run io.github.ajxd2.StudyNotes
 
 The build downloads about 1 GB and compiles ffmpeg, so the first build takes a few minutes. Your settings from a
 non-Flatpak install are adopted automatically on first run. Sign in to Claude once on the host (`claude`, then
-`/login`); the app reuses that login.
+`/login`); the app reuses that login. (No Claude Code on the host? The app bundles the CLI, so `flatpak run
+--command=/app/lib/python3.14/site-packages/claude_agent_sdk/_bundled/claude io.github.ajxd2.StudyNotes` then `/login`
+should work too; I have only tested the host-login route.)
 
 | Permission | Why |
 |---|---|
