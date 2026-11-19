@@ -102,17 +102,45 @@ first with it off, then **Regenerate Notes** on the lectures you care about.
   plan that includes it.
 - **Obsidian** is optional but it's the point: the app reads and writes a normal folder of Markdown.
 
-Arch / CachyOS packages:
+System packages for a source install are listed under **Install → From source**.
+
+## Install
+
+### Flatpak (recommended)
+
+Everything is bundled: the NPU driver, ffmpeg, the Python stack, the speech and speaker models, and Claude's CLI.
+You only need `flatpak`, `flatpak-builder`, and the NPU kernel driver (`intel_vpu`, in any recent kernel).
+
+```bash
+git clone https://github.com/AJXD2/study-notes.git
+cd study-notes
+flatpak install --user flathub org.gnome.Platform//51 org.gnome.Sdk//51
+flatpak-builder --user --install --force-clean build-dir io.github.ajxd2.StudyNotes.yml
+flatpak run io.github.ajxd2.StudyNotes
+```
+
+The build downloads about 1 GB and compiles ffmpeg, so the first build takes a few minutes. Your settings from a
+non-Flatpak install are adopted automatically on first run. Sign in to Claude once on the host (`claude`, then
+`/login`); the app reuses that login.
+
+| Permission | Why |
+|---|---|
+| `--filesystem=home` | Your Obsidian vaults and recordings can be anywhere, and the Claude login lives in `~/.claude`. |
+| `--device=all` | `/dev/accel` (the NPU) and `/dev/dri`. |
+| `--socket=pulseaudio` | Microphone. |
+| `--share=network` | Claude, and a one-time download if you pick the larger speech model. |
+
+> [!NOTE]
+> The Intel **GPU** compute runtime is not bundled, so inside the Flatpak Whisper runs on the **NPU** or **CPU**.
+> This is a local, self-hosted build (it fetches pip packages and models while building), so it is not
+> Flathub-ready yet.
+
+### From source
 
 ```bash
 sudo pacman -S python-gobject gtk4 libadwaita gstreamer gst-plugin-pipewire ffmpeg \
                intel-npu-driver intel-npu-compiler level-zero-loader
 sudo usermod -aG render "$USER"      # NPU device access; log out and back in
-```
-
-## Install
-
-```bash
 git clone https://github.com/AJXD2/study-notes.git
 cd study-notes
 scripts/install.sh

@@ -83,7 +83,9 @@ or 1.4 GB memory peak in the AI stack must not take the UI down. **`worker.py` m
 | `studynotes/common.py` | Config (`~/.config/study-notes/config.json`), vault layout (`classes_root`, `vault_classes`, `notes_subdir`, `vault_notes`, `course_of`), dates and filenames, note build/split/parse, `rename_speakers_text`, `find_note_by_link`, `Worker`, `convert_to_wav`, `Job`. |
 | `studynotes/worker.py` | Everything that needs OpenVINO/sherpa/Agent SDK. See **Worker protocol**. |
 | `data/` | Desktop entry, D-Bus service and icon templates (`@BIN@` is substituted by `install.sh`). |
-| `scripts/install.sh` | Idempotent setup for one user. |
+| `scripts/install.sh` | Idempotent setup for one user (non-Flatpak). |
+| `io.github.ajxd2.StudyNotes.yml` | Flatpak manifest (GNOME 51 runtime). Bundles Level Zero loader, Intel NPU driver + compiler, ffmpeg, pip deps, models. |
+| `data/*.metainfo.xml` | AppStream metadata (validate with `appstreamcli validate --no-net`). |
 | `tests/` | `unittest`; pure-logic tests only (no GTK display, no network, no models). |
 
 ## Data flow (one recording or import)
@@ -266,6 +268,43 @@ Other paths: models `~/.local/share/study-notes/models` (override `STUDYNOTES_MO
 - Obsidian opens a file by `obsidian://open?path=<urlencoded absolute path>` **only if** that file is inside a vault
   Obsidian already knows about.
 
+## Flatpak
+
+Build/install: `flatpak-builder --user --install --force-clean build-dir io.github.ajxd2.StudyNotes.yml`
+(first build ~10 min: ffmpeg compile + ~1 GB of downloads; later builds reuse `.flatpak-builder/` stages).
+Run: `flatpak run io.github.ajxd2.StudyNotes`; stop: `flatpak kill io.github.ajxd2.StudyNotes`.
+
+How the sandbox changes the app (all handled in code, keep it working on **both** a normal install and Flatpak):
+- `common.IN_FLATPAK` (`/.flatpak-info` exists). One Python for UI and worker (`worker_python()` returns the
+  runtime's `sys.executable`; the venv is only used outside Flatpak). Deps are pip-installed to `/app`.
+- Paths come from GLib XDG dirs (`common.CONFIG`, `DATA_DIR`, `CACHE_DIR`), which equal `~/.config` etc. on a normal
+  install and `~/.var/app/<id>/...` in the sandbox. On first run in Flatpak the host config is copied over.
+  `Worker` hands `STUDYNOTES_MODELS`, `STUDYNOTES_BUNDLED_MODELS`, `STUDYNOTES_CACHE` to `worker.py`, which cannot import GLib.
+- Models: `worker.find_model` looks in the user models dir, then `/app/share/study-notes/models` (shipped:
+  whisper-base.en + the sherpa models). Any other Whisper model is downloaded from Hugging Face on first use.
+- Microphone uses `pulsesrc` in the sandbox (PulseAudio socket) and `pipewiresrc` on the host.
+- Permissions are `--filesystem=home` (vaults and `~/.claude` can be anywhere), `--device=all` (`/dev/accel` NPU),
+  `--socket=pulseaudio`, `--share=network`. The sandbox has a **private `/tmp`**: put test files under `$HOME`.
+- The Intel **GPU** compute runtime is not bundled (OpenVINO lists only CPU and NPU in the sandbox).
+
+Build gotchas:
+- **`build-options: strip: false` and `no-debuginfo: true` are essential.** The Agent SDK bundles the Claude CLI as a
+  self-contained executable (payload appended to the ELF). flatpak-builder's strip/debuglink step corrupts it, and it then
+  runs as plain Bun (`--version` prints `1.4.4`; the SDK fails with `Script not found "stream-json"`). The correct
+  CLI prints `2.1.x (Claude Code)`.
+- The NPU stack must be bundled: Level Zero loader (built from source), and `libze_intel_npu` +
+  `libopenvino_intel_npu_compiler*` extracted from Intel's official `linux-npu-driver` release debs (match the host
+  kernel/firmware generation). The pip OpenVINO wheel does not contain them.
+- `DBusActivatable=true` requires `/app/share/dbus-1/services/<id>.service` or the export fails.
+- Each `build-commands` entry has its own `/tmp`; write intermediates in the build dir.
+- pip and Hugging Face steps need `--share=network` at build time, so this is not Flathub-ready (that needs offline,
+  checksummed sources, e.g. via flatpak-pip-generator).
+- A host `~/.local/share/applications/<id>.desktop` or `dbus-1/services/<id>.service` **shadows** the Flatpak's export
+  (the host entry wins). Remove them when switching to the Flatpak.
+- To test the GUI in the sandbox, run a script with `flatpak run --command=python3 io.github.ajxd2.StudyNotes script.py`
+  and set `main.APP_ID = "io.github.ajxd2.StudyNotes.Test"` (a sandbox may own `<app-id>.*` names). `pgrep -f studynotes/main.py`
+  on the host also matches the sandboxed process.
+
 ## Measured performance (Intel Core Ultra 5 325, NPU, plugged in)
 
 | Task | Time |
@@ -339,5 +378,5 @@ Whisper initial-prompt glossary built from the vault to fix technical terms and 
 transcript timestamps click-to-play in an in-app player; background processing instead of modal dialogs;
 slides/PDF/whiteboard-photo attachments as extra context; course `Index.md` updates and links to the previous
 lecture; persistent speaker voice profiles; a "what will be sent" preview with token estimate and per-folder exclude
-list; `studynotes://` deep links; a log file and crash reporting; live transcription during class; Flatpak packaging.
+list; `studynotes://` deep links; a log file and crash reporting; live transcription during class; Publishing to Flathub (offline sources, narrower filesystem access).
 Diarization settings are tuned on a single real English lecture - revisit with more real multi-speaker audio.
